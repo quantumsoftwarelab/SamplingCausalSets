@@ -13,7 +13,8 @@ from itertools import product
 # Same question for causal matrices
 
 # What is the overcounting? (i.e. how many different Link matrices correspond to the same causal set?)
-
+# depends on the natural labelling
+# One causal set can be represented by many different link matrices - not sure how to accomodate this overcounting. Reread henson paper
 
 
 def random_upper_triangular_binary_matrix(n):
