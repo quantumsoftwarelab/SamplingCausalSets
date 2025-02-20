@@ -8,7 +8,7 @@ import networkx as nx
 from itertools import product
 from collections import defaultdict
 import seaborn as sns
-
+import time
 
 class Henson_sampling:
     
@@ -298,6 +298,18 @@ class Henson_sampling:
                 for j in range(n):
                     m[i][j] = m[i][j] or (m[i][k] and m[k][j])
         return m
+    def num_relations(self, matrix):
+        """
+        Calculates the number of relations in a given causal matrix.
+        
+        Parameters:
+        matrix (np.ndarray): The causal matrix to calculate the number of relations of.
+        
+        Returns:
+        int: The number of relations in the causal matrix.
+        """
+        return np.sum(matrix)
+    
     
     def height(self, matrix):
         """
@@ -345,6 +357,7 @@ class Henson_sampling:
         if len(moves) == 0:
             print("Must have either or both link and relation moves, not neither")
             
+        start_time = time.time()
         acceptance = 0
         steps = num_samples * sample_frequency + T_therm +1
         for step in range(steps):
@@ -370,7 +383,9 @@ class Henson_sampling:
                 # Convert the matrix to a string representation to use as a dictionary key
                 matrix_str = self.causal_matrix.tostring()
                 unique_causal_matrices[matrix_str] += 1
-        
+        end_time = time.time()
+        #print("Time taken: ", end_time - start_time)
+        print("Time per step: ", (end_time - start_time)/steps)
         print("acceptance rate: ", acceptance/steps)
         return unique_causal_matrices
             
@@ -412,9 +427,9 @@ for i in range(100):
 
 
 
-n = 9
+n = 4
 num_samples = 100
-sample_frequency = 2* n**3
+sample_frequency = 2* n#n**3
 T_therm = sample_frequency *2
 
 
@@ -425,43 +440,63 @@ combinations = [(True, False), (False, True), (True, True)]
 colors = ['r', 'g', 'b', 'y']
 labels = ['Link Only', 'Relation Only', 'Both']
 
-plt.figure(figsize=(10, 6))
+fig, (ax1,ax2) = plt.subplots(1,2, figsize=(10, 6))
 
 for (link_move, relation_move), color, label in zip(combinations, colors, labels):
     uniques = sampler.sample(num_samples = num_samples, sample_frequency=sample_frequency, T_therm = T_therm, link_move=link_move, relation_move=relation_move)
     matrix_labels = list(uniques.keys())
     
     heights = []
+    num_relations = []
     for string in matrix_labels:
         matrix = np.frombuffer(string, dtype=np.int32).reshape(n, n)
         heights.append(sampler.height(matrix))
+        num_relations.append(sampler.num_relations(matrix))
     
-    counts_i = np.zeros(n)
-    
-    for height in heights:
-        counts_i[height] += 1
-    
+    # For num_relations
+    counts_i = np.zeros((n*(n-1))//2+1)
+    for num_relation in num_relations:
+        counts_i[num_relation] += 1
     counts_i = np.array(counts_i)
     T = np.sum(counts_i)
-
     freq = counts_i/T
     error = np.array([np.sqrt((l * (1-l))/(T-1)) for l in freq])  #√ f (1 − f )/(T − 1
-
+    ax2.errorbar(np.arange(0,len(counts_i),1), freq, yerr = error, color=color, linewidth = 0, elinewidth = 1,marker = "o",markersize = 3, label=label)
     
-    plt.errorbar(np.arange(0,n,1), freq, yerr = error, color=color, linewidth = 0, elinewidth = 1,marker = "o",markersize = 3, label=label)
+    # For  heights
+    counts_i = np.zeros(n+1)
+    for height in heights:
+        counts_i[height] += 1
+    counts_i = np.array(counts_i)
+    T = np.sum(counts_i)
+    freq = counts_i/T
+    error = np.array([np.sqrt((l * (1-l))/(T-1)) for l in freq])  #√ f (1 − f )/(T − 1
+    ax1.errorbar(np.arange(0,len(counts_i),1), freq, yerr = error, color=color, linewidth = 0, elinewidth = 1,marker = "o",markersize = 3, label=label)
+    
+    
+    
 
-exact_data = np.array([[1, 8.57e-9], [2, 0.051], [3, 0.61], [4, 0.40], 
+exact_data_height = np.array([[1, 8.57e-9], [2, 0.051], [3, 0.61], [4, 0.40], 
                     [5, 0.05], [6, 0.0031], [7, 0.000090], [8, 0.0000013]])
 
-plt.plot(exact_data[:,0], exact_data[:,1], color = "k", linewidth = 0, marker = "o", label='Exact Data')
+if n ==9:
+    ax1.plot(exact_data_height[:,0], exact_data_height[:,1], color = "k", linewidth = 0, marker = "o", label='Exact Data')
 
 
-plt.yscale('log')
-plt.xlabel('Height')
-plt.ylabel('Frequency (Normalized)')
-plt.title('Scatter Plot of Heights of Unique Causal Matrices')
-plt.legend()
+ax1.set_yscale('log')
+ax1.set_xlabel('Height')
+ax1.set_ylabel('Frequency (Normalized)')
+ax1.set_title('Scatter Plot of Heights of Unique Causal Matrices')
+#ax1.legend()
+
+
+ax2.set_yscale('log')
+ax2.set_xlabel('Number of relations')
+ax2.set_ylabel('Frequency (Normalized)')
+ax2.set_title('Scatter Plot of Heights of Unique Causal Matrices')
+
 plt.show()
+
 
 """
 # Create a violin plot with each integer having its own violin
