@@ -11,6 +11,7 @@ from qiskit.quantum_info import SparsePauliOp
 from qiskit_qulacs import QulacsProvider
 from qiskit_qulacs.qulacs_backend import QulacsBackend
 import math
+from helpers import *
 
 from collections import defaultdict
 
@@ -41,6 +42,9 @@ class Sampler:
                 gamma_TC: If nonzero, add Transitive Closure to Hamiltonian.
                 gamma_BD: If nonzero, add BD action approximation to Hamiltonian.
                 gamma_mix = (1- gamma_TC - gamma_BD) If nonzero, add the mixing term to the Hamiltonian. Can be inferred from 'gamma_TC' and `gamma_BD' if not provided
+        cargs (dict): A dictionary of arguments to pass to the classical sampler, including the following:
+            link_move (bool): If True, allow link moves. Default is False.
+            relation_move (bool): If True, allow relation moves. Default is False.
         t (int): The number of time steps to evolve the Hamiltonian. Default is 5.
         """
         self.n = n # number of elements in the causal set
@@ -775,7 +779,7 @@ class Sampler:
 
 
         
-    def sample(self, s = None, num_samples = 100, sample_frequency = 100, T_therm = 100, accept_all_legitimate_moves = False):
+    def sample(self, s = None, num_samples = 100, sample_frequency = 100, T_therm = 100, accept_all_legitimate_moves = False, observables = ["ordering_fraction", "height", "num_relations", "minimal_elements"]):
         """
         Samples the space of all causal sets, Omega, by using Quantum proposal.
         
@@ -788,23 +792,48 @@ class Sampler:
         elif type(s) == np.ndarray:
             s_mat = np.zeros((self.n, self.n), dtype=np.int32)
             s_mat[np.triu_indices(self.n, 1)] = [int(bit) for bit in s]
+            s = "".join(str(bit) for bit in s_mat[np.triu_indices(self.n, 1)])
         else:
             print("error with initial state")
-        unique_causal_matrices = defaultdict(int)
-
+        
+        bitstring_chain = []
+        sample_index = []
         
         
         acceptance_count = 0
         self_move_count = 0
         
         
+        if "ordering_fraction" in observables:
+            ordering_fractions_list = []
+        if "height" in observables:
+            heights_list = []
+        if "num_relations" in observables:
+            num_relations_list = []
+        if "minimal_elements" in observables:
+            minimal_elements_list = []
+        
+        
+        # Initial oservables
+        bitstring_chain.append(int(s, 2))
+        sample_index.append(0)
+        
+        if "ordering_fraction" in observables:
+            ordering_fractions_list.append(ordering_fraction(s_mat))
+        if "height" in observables:
+            heights_list.append(height(s_mat))
+        if "num_relations" in observables:
+            num_relations_list.append(num_relations(s_mat))
+        if "minimal_elements" in observables:
+            minimal_elements_list.append(minimal_elements(s_mat))
+        
+        
+        
         
         
         steps = num_samples * sample_frequency + T_therm +1
         start_time = time.time()
-        for step in range(steps):
-            
-            
+        for step in tqdm(range(1,steps)):
             s_prime = self.proposal(s)#self.quantum_proposal(s, TC=True, BD = True, mixing_time = 0.1)
             
             s_prime_mat = np.zeros((self.n, self.n), dtype=np.int32)
@@ -813,6 +842,7 @@ class Sampler:
             #s_prime_mat = np.frombuffer(s_prime.tostring(), dtype=np.int32).reshape(self.n, self.n)
             # If sampling form \Omega uniformly(ish)
             if accept_all_legitimate_moves:
+
                 if not is_causal_matrix(s_prime_mat):
                     pass
                 elif s_prime == s:
@@ -827,14 +857,36 @@ class Sampler:
             if step > T_therm and step % sample_frequency == 0:
                 # Convert the matrix to a string representation to use as a dictionary key
                 
-                matrix_str = s_mat.tobytes()
-                unique_causal_matrices[matrix_str] += 1
-        
+                
+                bitstring_chain.append(int(s, 2))
+                sample_index.append(step)
+                
+                if "ordering_fraction" in observables:
+                    ordering_fractions_list.append(ordering_fraction(s_mat))
+                if "height" in observables:
+                    heights_list.append(height(s_mat))
+                if "num_relations" in observables:
+                    num_relations_list.append(num_relations(s_mat))
+                if "minimal_elements" in observables:
+                    minimal_elements_list.append(minimal_elements(s_mat))
+                    
         end_time = time.time()
         print("Time taken: ", end_time - start_time, " (per step: ", (end_time - start_time)/steps, ", per sample ", (end_time - start_time)/num_samples, ")")
         print("acceptance rate: ", acceptance_count/steps)
         print("self move rate: ", self_move_count/steps)
-        return unique_causal_matrices
+        
+        
+        results = {"bitstring_chain": bitstring_chain, "sample_index": np.array(sample_index)}
+        if "ordering_fraction" in observables:
+            results["ordering_fractions"] = np.array(ordering_fractions_list)
+        if "height" in observables:
+            results["heights"] = np.array(heights_list)
+        if "num_relations" in observables:
+            results["num_relations"] = np.array(num_relations_list)
+        if "minimal_elements" in observables:
+            results["minimal_elements"] = np.array(minimal_elements_list)
+        
+        return results
     
 
 
