@@ -153,6 +153,20 @@ def transitive_closure(a:npt.NDArray) -> npt.NDArray:
     return m
 
 
+def transitive_reduction(a):
+    
+    # need to first close it... ugh
+    m = transitive_closure(a)
+    n = a.shape[0]
+    for j in range(n):
+        for i in range(n):
+            if (m[i][j]):
+                for k in range(n):
+                    if (m[j][k]):
+                        m[i][k] = 0
+    return m
+    
+    
 def is_causal_matrix(matrix:npt.NDArray) -> bool:
     """
     Checks if a given upper triangular binary matrix corresponds to the causal matrix of a causal set.
@@ -342,3 +356,48 @@ def minimal_elements(matrix: npt.NDArray) -> int:
         if np.sum(matrix[:,i]) == 0:
             minimal_elements += 1
     return minimal_elements
+
+
+def is_critical_pair(x, y, s_mat):
+    n = len(s_mat)
+    for k in range(y+1, n):
+        if s_mat[y,k] ==1: #k is fut(y)
+            if s_mat[x,k] != 1: #k is not fut(x)
+                # If there is a k such that k is fut(y) but not fut(x), then x and y are not a critical pair
+                return False
+    for k in range(0, x):
+        if s_mat[k,x] ==1:
+            if s_mat[k,y] != 1:
+                # If there is a k such that k is past(x) but not past(y), then x and y are not a critical pair
+                return False
+    #print("causal matrix: ", self.causal_matrix)
+    return True
+
+    
+def is_suitable_pair(x,y, s_mat):
+    n= len(s_mat)
+    #print("Suitable pair check, C: ", self.causal_matrix)
+    for z in range(0, x+1):#z is incpast(x)
+        if s_mat[z,x] ==1 or z == x:
+            #print("z: ", z)
+            for w in range(y, n):#w is incfut(y)
+                if s_mat[y,w] ==1 or w == y:
+                    #print("w: ", w)
+                    if s_mat[z,w] ==1: 
+                        #print("Not suitable pair, z, w: ", z,w)
+                        # If there is a z in incpast(x) related to w incfut(y), then not suitable
+                        return False
+            
+    return True
+
+    
+    
+def is_linked(x, y, s_mat):
+    linked = False
+    if s_mat[x,y] == 1: # If related
+        sum = 0
+        for k in range(x,y+1): 
+            sum += s_mat[x,k]*s_mat[k,y]
+        if sum == 0: # If there is no element in past(y) and fut(x), relation must be a link
+            linked =  True
+    return linked

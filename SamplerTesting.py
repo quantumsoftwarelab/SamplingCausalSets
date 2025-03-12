@@ -37,12 +37,12 @@ def plot_BD_action(sampler):
     costs_first_order_smearing = costs_first_order_smearing[argsort]
     costs_first_order_taylor = costs_first_order_taylor[argsort]
     
-    expectation_values = np.array( analyse_BD_action_Hamiltonian())[argsort]
+    expectation_values = np.array( analyse_BD_action_Hamiltonian(sampler))[argsort]
     
     plt.plot(labels, np.array(expectation_values), label = "H$_{BD_\epsilon}$ Expectation value")
     plt.plot(labels, costs, label = "BD$_\epsilon$ action", alpha = 0.5)
-    plt.plot(labels, costs_first_order_smearing, label = "BD$_\epsilon$ action first order", alpha = 0.5)
-    plt.plot(labels, costs_first_order_taylor, label = "BD$_\epsilon$ action first order taylor", alpha = 0.5)
+    #plt.plot(labels, costs_first_order_smearing, label = "BD$_\epsilon$ action first order", alpha = 0.5)
+    #plt.plot(labels, costs_first_order_taylor, label = "BD$_\epsilon$ action first order taylor", alpha = 0.5)
     plt.xlabel("Causal matrix")
     plt.ylabel("Smeared BD action")
     plt.title("Approximation of smeared BD action")
@@ -52,7 +52,8 @@ def plot_BD_action(sampler):
 
 def analyse_BD_action_Hamiltonian(sampler):
     expectation_values = []
-    sampler.define_BD_circuit()
+    sampler.define_BD_circuit(sampler.gamma_BD)
+    _, unique_causal_matrix = get_unique_matrices(sampler.n)
     
     op =  SparsePauliOp( sampler.Pauli_List,  sampler.coeffs_list)
     labels = ["".join(str(i) for i in list(np.frombuffer(mat, dtype=np.int32).reshape( sampler.n, sampler.n)[np.triu_indices( sampler.n, 1)])) for mat in  unique_causal_matrix]
@@ -240,36 +241,209 @@ def analyse_output_bitstrings(sampler, repeats = 100, energy_ordering = True, ti
     
     return weighted_BD_transitions_ignoring_self_transitions
 
+def simple_analyse_output_bitstrings(sampler, unique_causal_matrix, repeats = 100, title = ""):    
+    
+    mats = [np.frombuffer(mat, dtype=np.int32).reshape( sampler.n,  sampler.n) for mat in  unique_causal_matrix]
+    
+    print(" ")
+    print("Number of unique causal matrices: ", len(mats))
+    
+    labels = ["".join(str(i) for i in mat[np.triu_indices( sampler.n, 1)]) for mat in mats]
+    costs = np.zeros((2** sampler.q,2** sampler.q))
+    BD_action = np.zeros(2** sampler.q)
+    first_loop = True
+    
+    #for r in tqdm(range(repeats), desc="Repeats"):
+    for s_pos, s in tqdm(enumerate(labels)):
+        s_prime_list =  sampler.proposal(s, multiple = repeats)
+        
+        s_int = int(s, 2)
+        
+        for s_prime in s_prime_list:
+            s_prime_int = int(s_prime, 2)
+            costs[s_int, s_prime_int] += 1
+
+        if first_loop:
+            BD_action[s_int] =  calculate_action(mats[s_pos])
+    first_loop = False
+    
+
+    
+    
+    
+    
+    
+    
+    BD_sorted_args = np.argsort(BD_action)
+    sorted_BD = BD_action[BD_sorted_args]
+    costs = costs[BD_sorted_args,:]
+    costs = costs[:,BD_sorted_args]
+
+    
+    
+    s_int_list = [int(s, 2) for s in labels]
+    all_ints = np.arange(0, 2** sampler.q)
+    
+    all_ints = all_ints[BD_sorted_args]
+    
+    non_zero_bd_index = np.where(sorted_BD != 0)[0][0]
+
+    forbidden_count = 0
+    
+    for s_pos, s_int in enumerate(all_ints):
+        if s_int not in s_int_list:
+            for pos_i, i in enumerate(all_ints):
+                if costs[pos_i, s_pos] > 0:
+                    forbidden_count += costs[pos_i, s_pos]
+                    
+        
+                
+            
+    print(" ")
+    print(" --------------------- ")
+    print(title)
+    BD_transitions = np.zeros((2** sampler.q,2** sampler.q))
+    hamming_distances = np.zeros((2** sampler.q,2** sampler.q))
+    for i in range(2** sampler.q):
+        for j in range(2** sampler.q):
+            BD_transitions[i,j] = np.abs(sorted_BD[i] - sorted_BD[j])
+            hamming_distances[i,j] = np.sum(np.abs(np.array(list(bin(BD_sorted_args[i])[2:].zfill(sampler.q)), dtype = int) - np.array(list(bin(BD_sorted_args[j])[2:].zfill( sampler.q)), dtype = int)))
+
+
+    costs_no_self = np.copy(costs)
+    np.fill_diagonal(costs_no_self, 0)
+    
+    total_hamming_transition_cost = np.sum((hamming_distances[non_zero_bd_index:,non_zero_bd_index:] * costs[non_zero_bd_index:,non_zero_bd_index:]))
+    total_bd_transition_cost = np.sum((BD_transitions[non_zero_bd_index:,non_zero_bd_index:] * costs[non_zero_bd_index:,non_zero_bd_index:]))
+    total_transitions = np.sum(costs)
+    self_transitions = np.sum(np.diag(costs))
+    
+    print(" ")
+    print("Average BD transition cost: ", total_bd_transition_cost/(total_transitions-forbidden_count-self_transitions))
+    print("Average Hamming transition cost: ", total_hamming_transition_cost/(total_transitions-forbidden_count-self_transitions))
+    print(" ")
+    print("Frequency of self transitions: ", self_transitions / total_transitions)
+    print("Frequency of forbidden transitions: ", forbidden_count / total_transitions)
+    print(" --------------------- ")
+    print(" ")
+    
+    
+    weighted_BD_transitions_ignoring_self_transitions = np.repeat(BD_transitions[non_zero_bd_index:,non_zero_bd_index:].flatten(), costs_no_self[non_zero_bd_index:,non_zero_bd_index:].flatten().astype(int)).flatten()
+    weighted_hamming_transitions_ignoring_self_transitions = np.repeat(hamming_distances[non_zero_bd_index:,non_zero_bd_index:].flatten(), costs_no_self[non_zero_bd_index:,non_zero_bd_index:].flatten().astype(int)).flatten()
+    
+    return weighted_BD_transitions_ignoring_self_transitions, weighted_hamming_transitions_ignoring_self_transitions
+
+
 
 
 cardinality = 5
+number_of_samples = 1000
+unique_causal_matrices = get_unique_matrices(cardinality)[1]
+
+Qsamp = Sampler(cardinality, method="quantum", qargs = {"gammas":[0, 0.95, 0.05], "t":5})
+#Qsamp.get_alpha_BD()
+#Qsamp.get_alpha_TC()
+#plot_BD_action(Qsamp)
+#simple_analyse_output_bitstrings(Qsamp, get_unique_matrices(cardinality)[1], repeats = 10000, title = "test")
+
 
 transitions = []
 titles = []
 
+title = "Classical Algorithm"
+titles.append(title)
+Qsamp = Sampler(cardinality, method="classical", cargs = {"link_move":True, "relation_move":False})
+transitions.append(simple_analyse_output_bitstrings(Qsamp, unique_causal_matrices, repeats = number_of_samples, title = title))
+
 title = "Mixing only"
 titles.append(title)
-Qsamp = Sampler(cardinality, method="quantum", qargs = {"TC":False, "BD":False, "mixing_time":0.1, "t":5})
-transitions.append(analyse_output_bitstrings(Qsamp, repeats = 10000, energy_ordering=True, title = title, plot_grid = False, plot_cumulative = False))
+Qsamp = Sampler(cardinality, method="quantum", qargs = {"gammas":[0,0,1], "t":5})
+transitions.append(simple_analyse_output_bitstrings(Qsamp, unique_causal_matrices, repeats = number_of_samples, title = title))
 
 
 title = "Mixing and BD"
 titles.append(title)
-Qsamp = Sampler(cardinality, method="quantum", qargs = {"TC":False, "BD":True, "mixing_time":0.1, "t":5})
-transitions.append(analyse_output_bitstrings(Qsamp, repeats = 10000, energy_ordering=True, title = title, plot_grid = False, plot_cumulative = False))
+Qsamp = Sampler(cardinality, method="quantum", qargs = {"gammas":[0, 0.1, 0.9], "t":5})
+transitions.append(simple_analyse_output_bitstrings(Qsamp, unique_causal_matrices, repeats = number_of_samples, title = title))
+
+
+
 
 title = "Mixing and TC"
 titles.append(title)
-Qsamp = Sampler(cardinality, method="quantum", qargs = {"TC":True, "BD":False, "mixing_time":0.1, "t":5})
-transitions.append(analyse_output_bitstrings(Qsamp, repeats = 10000, energy_ordering=True, title = title, plot_grid = False, plot_cumulative = False))
+Qsamp = Sampler(cardinality, method="quantum", qargs = {"gammas":[0.9, 0, 0.1], "t":5})
+transitions.append(simple_analyse_output_bitstrings(Qsamp, unique_causal_matrices, repeats = number_of_samples, title = title))
 
 title = "Mixing, TC and BD"
 titles.append(title)
-Qsamp = Sampler(cardinality, method="quantum", qargs = {"TC":True, "BD":True, "mixing_time":0.1, "t":5})
-transitions.append(analyse_output_bitstrings(Qsamp, repeats = 10000, energy_ordering=True, title = title, plot_grid = False, plot_cumulative = False))
+Qsamp = Sampler(cardinality, method="quantum", qargs = {"gammas":[0.9, 0.01, 0.09], "t":5})
+transitions.append(simple_analyse_output_bitstrings(Qsamp, unique_causal_matrices, repeats = number_of_samples, title = title))
+
+
+
+fig, axs = plt.subplots(2, 1, figsize=(10, 10))
+
+#plot histogram
+total_number_of_transitions = number_of_samples*len(unique_causal_matrices)
+for i in range(len(transitions)):
+    
+    
+    counts_BD, bins_BD, _= axs[0].hist(transitions[i][0], bins=50, density=False, cumulative=True, histtype='step', label=titles[i])
+    counts_ham, bins_ham, _ = axs[1].hist(transitions[i][1], bins=Qsamp.q+1, density=False, cumulative=True, histtype='step', label=titles[i])
+    print("sum of counts_BD: ", np.sum(counts_BD))
+    
+    # Find area under BD histogram 
+    normalised_area_under_BD = np.sum(counts_BD)/(total_number_of_transitions*len(bins_BD))
+    print("Normalised area under BD for ", titles[i], ": ", normalised_area_under_BD)
+    
+    # Find area under hamming histogram (normalised to maximum possible transitions)
+    normalised_area_under_hamming = np.sum(counts_ham)/(total_number_of_transitions*len(bins_ham))
+    print("Normalised area under hamming for ", titles[i], ": ", normalised_area_under_hamming)
+
+
+axs[0].plot([0, max(transitions[i][0])], [total_number_of_transitions,total_number_of_transitions], color='blue', linestyle='--', label='Maximum possible transitions')
+axs[1].plot([0, Qsamp.q], [total_number_of_transitions,total_number_of_transitions], color='blue', linestyle='--', label='Maximum possible transitions')
+
+axs[0].set_title('Cumulative Probability of BD Transitions for each Hamiltonian')
+axs[0].set_ylabel('Cumulative Probability')
+axs[0].set_xlabel('BD Transition energy $\Delta S_{BD_\epsilon}$')
+axs[0].legend()
+
+axs[1].set_title('Cumulative Probability of Hamming Weight for each Hamiltonian')
+axs[1].set_ylabel('Cumulative Probability')
+axs[1].set_xlabel('Hamming weight of transition')
+axs[1].legend()
+
+plt.tight_layout()
+plt.show()
+
+"""
+transitions = []
+titles = []
+# Gammas order is  TC, BD, Mixing
+title = "Mixing only"
+#titles.append(title)
+#Qsamp = Sampler(cardinality, method="quantum", qargs = {"gammas":[0,0,1], "t":5})
+#transitions.append(analyse_output_bitstrings(Qsamp, repeats = 10000, energy_ordering=True, title = title, plot_grid = True, plot_cumulative = False))
+
+
+title = "Mixing and BD"
+#titles.append(title)
+#Qsamp = Sampler(cardinality, method="quantum", qargs = {"gammas":[0, 0.8, 0.2], "t":5})
+#transitions.append(analyse_output_bitstrings(Qsamp, repeats = 10000, energy_ordering=True, title = title, plot_grid = True, plot_cumulative = False))
+
+title = "Mixing and TC"
+titles.append(title)
+Qsamp = Sampler(cardinality, method="quantum", qargs = {"gammas":[0.95, 0, 0.05], "t":5})
+transitions.append(analyse_output_bitstrings(Qsamp, repeats = 10000, energy_ordering=True, title = title, plot_grid = True, plot_cumulative = False))
+
+title = "Mixing, TC and BD"
+titles.append(title)
+Qsamp = Sampler(cardinality, method="quantum", qargs = {"gammas":[0.95, 0.01, 0.04], "t":5})
+transitions.append(analyse_output_bitstrings(Qsamp, repeats = 10000, energy_ordering=True, title = title, plot_grid = True, plot_cumulative = False))
 
 for i in range(len(transitions)):
-    plt.hist(transitions[i], bins=50, density=True, cumulative=True, histtype='step', label=titles[i])
+    plt.hist(transitions[i], bins=50, density=False, cumulative=True, histtype='step', label=titles[i])
 
 plt.title('Cumulative Probability of BD Transitions for each hamiltonian')
 plt.ylabel('Cumulative Probability')
@@ -278,4 +452,4 @@ plt.xlabel('BD Transition energy $\Delta S_{BD_\epsilon}$')
 plt.legend()
 plt.show()
 
-#plot_BD_action(Qsamp)
+"""
