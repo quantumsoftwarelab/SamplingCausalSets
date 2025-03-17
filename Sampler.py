@@ -324,25 +324,8 @@ class Sampler:
         
     def get_alpha_BD(self):
         """
-        # Sanity check of this god awful code.
-        # If it works for the simple case of X, then it probably works for the more complex case of BD (I hope)
-        # Also proves that the scipy frobenius norm is BS
-        X_pauli_list = []
-        for i in range(self.n):
-            X_string = np.zeros(self.q)
-            operator = Pauli((np.zeros(self.q),X_string, 0))
-            X_pauli_list.append(operator)
-        X_Pauli_List = PauliList(X_pauli_list)
-        X_coeffs = np.ones(self.n)
-        
-        matrix = SparsePauliOp(X_Pauli_List, X_coeffs).to_matrix()
-        x_norm = np.linalg.norm(matrix)
-        print("x_norm: ", x_norm)
-        x_norm_manual = 0
-        for i in X_coeffs:
-            x_norm_manual += (i)**2
-        x_norm_manual = np.sqrt(x_norm_manual)
-        print("x_norm_manual: ", x_norm_manual)"""
+        Calculate the alpha parameter for the BD action.
+        """
         
         self.define_BD_circuit(gamma_BD = self.gamma_BD, epsilon = self.epsilon, return_circuit=False)
         
@@ -413,6 +396,8 @@ class Sampler:
     
     def get_alpha_TC(self):
         
+        """Calculate the alpha parameter for the TC action."""
+        
         self.define_TC_circuit(gamma_TC = self.gamma_TC, return_circuit=False)
         
         Pauli_List = copy.copy(self.TC_Pauli_List)
@@ -476,16 +461,17 @@ class Sampler:
 
     def define_TC_circuit(self , gamma_TC: float, trivial_terms:bool = False, return_circuit:bool = True)-> QuantumCircuit | None:
         """
-        # if return circuit is False, this function is being used to initialise alpha_TC
-        # Actually makes the circuit. Next iteration of this code should just take the pauli terms and coeffs (not including gamma) 
-        # and use this to contruct the HSIM circuit for arb. gamma
         Defines a quantum circuit to exhibit TC (Transitive closure) using a combination of one-body, two-body, 
         and three-body Pauli operators. 
+
+        # Actually makes the circuit. Next iteration of this code should just take the pauli terms and coeffs (not including gamma) 
+        # and use this to contruct the HSIM circuit for arb. gamma
+
 
         Parameters:
             gamma_TC (float): The coefficient for the Hamiltonian term corresponding to TC.
             trivial_terms (bool): If True, include the trivial terms in the Hamiltonian. Default is False.
-            
+            return_circuit (bool): If True, return the quantum circuit. If False, return None. Default is True.
         
         Returns:
             QuantumCircuit: The constructed quantum circuit after decomposition.
@@ -554,6 +540,17 @@ class Sampler:
 
     def define_mixing_circuit(self, gamma_mix: float) -> QuantumCircuit:
         
+        """
+        Define a quantum circuit for time evolution of the mixing term.
+
+        Parameters:
+            gamma_mix (float): The coefficient for the Hamiltonian term corresponding to mixing.
+
+        Returns:
+            QuantumCircuit: The constructed quantum circuit after applying the mixing.
+        """
+        
+        
         evo_time = gamma_mix
         
         # simple X mixer as in Layden
@@ -567,7 +564,19 @@ class Sampler:
 
         return circuit.decompose()
 
-    def add_evo_to_circuit(self, circuit: QuantumCircuit, op:Pauli, time: float = 0.2):
+    def add_evo_to_circuit(self, circuit: QuantumCircuit, op:Pauli, time: float = 0.2)-> QuantumCircuit:
+        """
+        
+        Adds a time evolution gate (of a hgiven operator) to a quantum circuit.
+        
+        Parameters:
+            circuit (QuantumCircuit): The quantum circuit to add the time evolution gate to.
+            op (Pauli): The Pauli operator to evolve.
+            time (float): The time to evolve the operator for. Default is 0.2.
+            
+        Returns:
+            QuantumCircuit: The quantum circuit with the time evolution gate appended.
+        """
         evo = PauliEvolutionGate(op, time=time)
         circuit.append(evo, range(self.q))
         return circuit
@@ -580,14 +589,13 @@ class Sampler:
         transitive closure, and BD action terms.
         
         Parameters:
-        s (str): The initial bitstring configuration.
-        
-        multiple (int): The number of samples to generate. Default is 1. More than one can be useful for analysing the proposal.
+            s (str): The initial bitstring configuration.
+            multiple (int): The number of samples to generate. Default is 1. More than one can be useful for analysing the proposal.
         
         
         Returns:
-        str or list: If `multiple` is 1, returns a single new bitstring configuration.
-            If `multiple` is greater than 1, returns a list of new bitstring configurations.
+            str or list: If `multiple` is 1, returns a single new bitstring configuration.
+                If `multiple` is greater than 1, returns a list of new bitstring configurations.
         """
         mixing_circ = self.define_mixing_circuit(gamma_mix= self.gamma_mixing)
         if self.gamma_TC > 0:
@@ -641,6 +649,24 @@ class Sampler:
 
 
     def classical_proposal(self, s: str, multiple: int = 1) -> str | list:
+        """
+        Generates a new state or a list of new states by applying random moves 
+        to the input state `s`. The moves are selected from a predefined set 
+        of possible moves.
+        Args:
+            s (str): The input state to which the moves will be applied.
+            multiple (int, optional): The number of new states to generate. 
+                Defaults to 1. If `multiple` is 1, a single new state is returned; 
+                otherwise, a list of new states is returned.
+        Returns:
+            str | list: A single new state (if `multiple` is 1) or a list of new 
+            states (if `multiple` > 1).
+        Raises:
+            ValueError: If an invalid move is selected from the predefined set 
+            of moves.
+        """
+        
+        
         #select move
         s_primes = []
         for m in range(multiple):
@@ -656,6 +682,19 @@ class Sampler:
         return s_primes
     
     def link_move(self, s) -> str:
+        """Perform a link move operation on a binary string `s` representing the upper 
+        triangular part of a causal matrix. The function modifies the causal matrix 
+        by either removing or adding a link between two randomly selected nodes, while
+        ensuring that the resulting matrix maintains transitive closure. As described in Henson paper
+        
+        Args:
+            s (str): A binary string representing the upper triangular part of the 
+                causal matrix.
+        Returns:
+            str: A binary string representing the updated upper triangular part of 
+                the causal matrix after the link move operation.
+        
+        """
         
         s_mat = np.zeros((self.n, self.n), dtype=np.int32)
         s_mat[np.triu_indices(self.n, 1)] = [int(bit) for bit in s]
@@ -749,6 +788,21 @@ class Sampler:
         return "".join(str(bit) for bit in s_mat[np.triu_indices(self.n, 1)])
             
     def relation_move(self, s):
+        """
+        Perform a relation move on a binary string representation of an upper triangular matrix.
+        This function modifies the binary string `s` by randomly selecting two indices (i, j),
+        ensuring they are distinct, and then determining whether to update the corresponding
+        entry in the upper triangular matrix based on specific conditions.
+        Args:
+            s (str): A binary string representing the upper triangular part of an n x n matrix,
+                excluding the diagonal. The length of the string should be `n * (n - 1) / 2`.
+        Returns:
+            str: A modified binary string representing the updated upper triangular matrix.
+        
+        """
+        
+
+        
         s_mat = np.zeros((self.n, self.n), dtype=np.int32)
         s_mat[np.triu_indices(self.n, 1)] = [int(bit) for bit in s]
         # pick two random elements i and j
@@ -783,8 +837,17 @@ class Sampler:
         """
         Samples the space of all causal sets, Omega, by using Quantum proposal.
         
+        Parameters:
+            s (str): The initial state of the system. If None, the initial state is set to the all-ones matrix.
+            num_samples (int): The number of samples to generate. Default is 100.
+            sample_frequency (int): The frequency at which samples are generated. Default is 100.
+            T_therm (int): The number of thermalisation steps. Default is 100.
+            accept_all_legitimate_moves (bool): If True, accept all legitimate moves. Default is False.
+                If False: Use BD action sampling algorithm.
+            observables (list): A list of observables to calculate. Default is ["ordering_fraction", "height", "num_relations", "minimal_elements"].
+        
         Returns:
-        dict: A dictionary with causal matrices as keys and their counts as values.
+            dict: A dictionary with causal matrices as keys and their counts as values.
         """
         if s is None:
             s_mat = np.ones((self.n, self.n), dtype=np.int32)

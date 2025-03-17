@@ -1,4 +1,5 @@
-# Code to brute force sample Omega, by generating all possible upper triangular binary matrices of size n x n, and checking if they correspond to link/causal matrices.
+# Code to brute force sample Omega, by generating all possible upper triangular binary matrices of size n x n, 
+# and checking if they correspond to link/causal matrices.
 
 
 import numpy as np
