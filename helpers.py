@@ -3,6 +3,8 @@ import numpy as np
 from itertools import product
 import math
 from typing import List, Tuple, Union, Dict
+import os
+import pickle
 import numpy.typing as npt
 
 def calc_interval_abundances(causal_matrix: npt.NDArray ) -> npt.NDArray[np.int32]:
@@ -20,7 +22,6 @@ def calc_interval_abundances(causal_matrix: npt.NDArray ) -> npt.NDArray[np.int3
     """
 
     n = causal_matrix.shape[0]
-
     adj_mat = causal_matrix
     past_mat = causal_matrix.T
 
@@ -56,10 +57,10 @@ def calculate_action(causal_matrix: npt.NDArray, smeared: bool = True, stdim: in
         
         Returns:
             float: The calculated action.
-        """
+    """
     
-    if stdim != 2:
-        raise NotImplementedError("Only 2D is currently implemented")
+    #if stdim != 2:
+    #    raise NotImplementedError("Only 2D is currently implemented")
     
     if first_order_taylor:
         if first_order_smearing == False:
@@ -200,43 +201,164 @@ def get_unique_matrices(n:int) -> Tuple[set, set]:
     """
     
     
-    num_unique = 2**((n**2-n)//2)
+    # Create the directory if it doesn't exist
+    filepath = os.getcwd()
+    save_folder = "save_files"
+    save_path = os.path.join(filepath, save_folder)
     
-    unique_matrices = set()
-    for bits in product([0, 1], repeat=(n * (n - 1)) // 2):
-        matrix = np.zeros((n, n), dtype = np.int32)
-        upper_tri_indices = np.triu_indices(n, 1)
-        matrix[upper_tri_indices] = bits
-        unique_matrices.add(matrix.tobytes())
-        dtype_ = matrix.dtype
-
+    
+    try:
+        unique_matrices = pickle.load(open(os.path.join(save_path, f"unique_matrices_"+str(n)+".pkl"), "rb"))
+        unique_causal_matrix = pickle.load(open(os.path.join(save_path, f"unique_causal_matrices_"+str(n)+".pkl"), "rb"))
+    except:
+        num_unique = 2**((n**2-n)//2)
         
-    #print(f"Number of unique matrices: {len(unique_matrices)}")
-    if len(unique_matrices) != num_unique:
-        raise ValueError(f"Number of unique matrices is not correct. Expected {num_unique}, got {len(unique_matrices)}")
+        unique_matrices = set()
+        for bits in product([0, 1], repeat=(n * (n - 1)) // 2):
+            matrix = np.zeros((n, n), dtype = np.int32)
+            upper_tri_indices = np.triu_indices(n, 1)
+            matrix[upper_tri_indices] = bits
+            unique_matrices.add(matrix.tobytes())
+            dtype_ = matrix.dtype
+
+            
+        #print(f"Number of unique matrices: {len(unique_matrices)}")
+        if len(unique_matrices) != num_unique:
+            raise ValueError(f"Number of unique matrices is not correct. Expected {num_unique}, got {len(unique_matrices)}")
 
 
-    unique_causal_matrix = set()
+        unique_causal_matrix = set()
 
 
 
-    for unique_matrix in unique_matrices:
-        matrix = np.frombuffer(unique_matrix, dtype = dtype_).reshape(n,n)
+        for unique_matrix in unique_matrices:
+            matrix = np.frombuffer(unique_matrix, dtype = dtype_).reshape(n,n)
 
-        unique_matrices.add(matrix.tobytes())
+            unique_matrices.add(matrix.tobytes())
+            
         
+
+            if is_causal_matrix(matrix):
+                unique_causal_matrix.add(matrix.tobytes())
+
+
+        unique_matrices = unique_matrices
+        unique_causal_matrix = unique_causal_matrix
+        
+        
+
+        with open(os.path.join(save_path, f"unique_matrices_"+str(n)+".pkl"), "wb") as f:
+            pickle.dump(unique_matrices, f)
+
+        with open(os.path.join(save_path, f"unique_causal_matrices_"+str(n)+".pkl"), "wb") as f:
+            pickle.dump(unique_causal_matrix, f)
+        
+    unique_matrices = sorted(unique_matrices, key=lambda x: np.frombuffer(x, dtype=np.int32).reshape(n, n).tolist())
+    unique_causal_matrix = sorted(unique_causal_matrix, key=lambda x: np.frombuffer(x, dtype=np.int32).reshape(n, n).tolist())
     
-
-        if is_causal_matrix(matrix):
-            unique_causal_matrix.add(matrix.tobytes())
-
-
-    unique_matrices = unique_matrices
-    unique_causal_matrix = unique_causal_matrix
-    
+    #print("Unique matrices: ", unique_matrices)
+    #print("Unique causal matrices: ", unique_causal_matrix)
     return unique_matrices, unique_causal_matrix
 
+def get_unique_causal_bitstrings(n:int) -> Tuple[npt.NDArray,npt.NDArray]:
+    
+    unique_matrices, unique_causal_matrices = get_unique_matrices(n)
+    
+    # Convert unique causal matrices into bitstring representations
+    unique_bitstring_causal_matrices = []
+    for string in unique_causal_matrices:
+        matrix = np.frombuffer(string, dtype=np.int32).reshape((n, n))
+        bitstring = ''.join(str(int(matrix[i, j])) for i in range(n) for j in range(i + 1, n))
+        unique_bitstring_causal_matrices.append(bitstring)
 
+    # Convert to a numpy array
+    unique_bitstring_causal_matrices = np.array(unique_bitstring_causal_matrices)
+    
+    unique_bitstring_matrices = []
+    # Convert unique causal matrices into bitstring representations
+    for string in unique_matrices:
+        matrix = np.frombuffer(string, dtype=np.int32).reshape((n, n))
+        bitstring = ''.join(str(int(matrix[i, j])) for i in range(n) for j in range(i + 1, n))
+        unique_bitstring_matrices.append(bitstring)
+    
+    unique_bitstring_matrices = np.array(unique_bitstring_matrices)
+    
+    
+        # Sort full list of matrices
+    arg_sorted = np.array(np.argsort(list(unique_bitstring_matrices), axis=0), dtype=int)
+    unique_bitstring_matrices = np.array(list(unique_bitstring_matrices))[arg_sorted]
+
+    # Sort causal matrices
+    arg_sorted_causal = np.array(np.argsort(list(unique_bitstring_causal_matrices), axis=0), dtype=int)
+    unique_bitstring_causal_matrices = np.array(list(unique_bitstring_causal_matrices))[arg_sorted_causal]
+    
+    return unique_bitstring_matrices, unique_bitstring_causal_matrices
+
+
+
+
+def calculate_average_action(cardinality:int, causal_matrices: set, stdim: int = 2, epsilon: float = 0.1, Temp: float = 1) -> float:
+    """
+    Calculate the average action over a set of causal matrices for a particular temperature.
+    
+    Parameters:
+        causal_matrices (set): A set of unique causal matrices.
+        smeared (bool, optional): Whether to apply smearing. Default is True.
+        stdim (int, optional): The spacetime dimension. Default is 2.
+        epsilon (float, optional): The epsilon parameter for smearing. Default is 0.1.
+    """
+    save_path = os.path.join(os.path.dirname(os.getcwd()), "save_files")
+    str_temp = str(Temp).replace(".", "_") 
+    
+    
+    
+    try:
+        average_action = np.load(os.path.join(save_path, f"average_action_{cardinality}_"+str_temp)+".npy")
+        return average_action
+    except:
+        pass
+    causal_bitstrings = causal_matrices.copy()
+    causal_matrices = []
+    for bitstring in causal_bitstrings:
+        matrix = np.zeros((cardinality,cardinality), dtype = np.int32)
+        upper_tri_indices = np.triu_indices(cardinality, 1)
+        for i in range(len(upper_tri_indices[0])):
+            matrix[upper_tri_indices[0][i],upper_tri_indices[1][i]] = bitstring[i]
+        causal_matrices.append(matrix)
+    
+    partition_function = calculate_BD_partition_function(cardinality, causal_matrices, stdim = stdim, epsilon = epsilon, Temp = Temp)
+    average_action = 0
+    for i, matrix in enumerate(causal_matrices):
+        bitstring = causal_bitstrings[i]
+        if not is_causal_matrix(matrix):
+            raise ValueError("Matrix is not a causal matrix")
+        action = calculate_action(matrix, stdim = stdim, epsilon = epsilon)
+        mu = calculate_mu(action, partition_function, Temp = Temp)
+
+        average_action += action * mu
+    np.save(os.path.join(save_path, f"average_action_{cardinality}_"+str_temp+".npy"), average_action)
+    return average_action
+
+def calculate_mu(action, partition_function, Temp):
+    return np.exp(-action/Temp)/partition_function
+    
+def calculate_BD_partition_function(cardinality: int, causal_matrices: set, stdim: int = 2, epsilon: float = 0.1, Temp: float = 1) -> float:
+    save_path = os.path.join(os.path.dirname(os.getcwd()), "save_files")
+    str_temp = str(Temp).replace(".", "_") 
+    q = cardinality*(cardinality-1)//2
+    try:
+        partition_function = np.load(os.path.join(save_path, f"partition_function_{cardinality}_"+str_temp)+".npy")
+        return partition_function
+    except:   
+        partition_function = 0
+        for matrix in causal_matrices:
+            
+            
+            action = calculate_action(matrix, stdim = stdim, epsilon = epsilon)
+            partition_function += np.exp(-action/Temp)
+        
+        np.save(os.path.join(save_path, f"partition_function_{cardinality}_"+str_temp+".npy"), partition_function)
+        return partition_function
 
 
 
@@ -375,6 +497,11 @@ def is_critical_pair(x, y, s_mat):
 
     
 def is_suitable_pair(x,y, s_mat):
+    
+    if s_mat[x,y] == 1:
+        # If x and y are related, then not a suitable pair
+        return False
+    
     n= len(s_mat)
     #print("Suitable pair check, C: ", self.causal_matrix)
     for z in range(0, x+1):#z is incpast(x)
@@ -390,14 +517,37 @@ def is_suitable_pair(x,y, s_mat):
             
     return True
 
+
+def make_basis(n:int) -> npt.NDArray:
+    basis = [(j, k) for j in range(n) for k in range(j+1, n)]
+    return basis
+
+def is_incpast(a,x,s_mat):
+    # If a is in the inclusive past of x, then return True
+    # Else, return false
+    if s_mat[a,x] == 1 or a == x:
+        return True
+    else:
+        return False
+
+def is_incfut(b,y,s_mat):
+    # If a is in the inclusive future of x, then return True
+    # Else, return false
     
+    if s_mat[y,b] == 1 or b == y:
+        return True
+    else:
+        return False
     
 def is_linked(x, y, s_mat):
     linked = False
     if s_mat[x,y] == 1: # If related
-        sum = 0
+        #for all points k
         for k in range(x,y+1): 
-            sum += s_mat[x,k]*s_mat[k,y]
-        if sum == 0: # If there is no element in past(y) and fut(x), relation must be a link
-            linked =  True
+            if s_mat[x,k] == 1 and s_mat[k,y] == 1:
+                # If there is a k such that k is past(x) and fut(y), then not a link
+                return False
+        linked = True # If urelated and nothing in between, then linked
+    else: # If unrelated
+        linked = False
     return linked

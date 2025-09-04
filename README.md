@@ -2,10 +2,12 @@
 
 # Sampling algorithms for Causal Set Theory (CST)
 
+Code for arXived paper: [Dynamics of discrete spacetimes with Quantum-enhanced Markov Chain Monte Carlo](https://arxiv.org/abs/2506.19538)
+
 This code builds a quantum sampling algorithm, equivalent to the classical computational methods from CST: [1](https://arxiv.org/abs/1504.05902), [2](https://arxiv.org/abs/1908.11647), [3](https://arxiv.org/pdf/1110.6244).
 The quantum process is based on Layden's work on the [Quantum enhanced Markov Chain Monte Carlo (QeMCMC)](https://www.nature.com/articles/s41586-023-06095-4), with the addition of the transitive closure constraint.
 
-The project is ongoing - so routine updates should be expected.
+The project is ongoing - so updates should be expected. 
 
 ## Authors and contact
 For questions and suggestions, please contact Stuart Ferguson: S.A.Ferguson-3@sms.ed.ac.uk
